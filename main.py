@@ -12,7 +12,7 @@ from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
 from flask_gravatar import Gravatar
 from functools import wraps
 from sqlalchemy import Table, Column, Integer, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = '8BYkEfBA6O6donzWlSihBXox7C0sKR6b'
@@ -59,9 +59,8 @@ class User(UserMixin, db.Model):
 class BlogPost(db.Model):
     __tablename__ = "blog_posts"
     id = db.Column(db.Integer, primary_key=True)
-    # Create a foreignkey refering to the table name of users
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    author = db.Column(db.String(250), nullable=False)
+    author_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    author = db.relationship("User", back_populates='posts')
 
     title = db.Column(db.String(250), unique=True, nullable=False)
     subtitle = db.Column(db.String(250), nullable=False)
@@ -69,8 +68,7 @@ class BlogPost(db.Model):
     body = db.Column(db.Text, nullable=False)
     img_url = db.Column(db.String(250), nullable=False)
 
-    #create a comment object attached to the blogpost
-    comments = relationship("Comment", back_populates='post')
+    comments = relationship("Comment", back_populates='parent_post')
 # db.create_all()
 
 
@@ -80,11 +78,11 @@ class Comment(db.Model):
     text = db.Column(db.Text, nullable=False)
 
     post_id = db.Column(db.Integer, db.ForeignKey('blog_posts.id'))
-    post = db.relationship("BlogPost", back_populates='comments')
+    parent_post = db.relationship("BlogPost", back_populates='comments')
 
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     comment_author = db.relationship("User", back_populates='comments')
-# db.create_all()
+db.create_all()
 
 
 @app.route('/')
@@ -102,8 +100,8 @@ def register():
             return redirect(url_for('login'))
 
         hashed_and_salted_password = generate_password_hash(request.form.get('password'), method='pbkdf2:sha256', salt_length=8)
-        new_user = User(name=request.form.get('name'),
-                        email=request.form.get('email'),
+        new_user = User(name=form.name.data,
+                        email=form.email.data,
                         password=hashed_and_salted_password)
 
         db.session.add(new_user)
@@ -156,10 +154,10 @@ def show_post(post_id):
 
         new_comment = Comment(text=form.comment_section.data,
                               comment_author=current_user,
-                              author_id=requested_post.id)
+                              post_id=requested_post.id)
         db.session.add(new_comment)
         db.session.commit()
-        return redirect(url_for('show_post', post=requested_post))
+
     return render_template("post.html", post=requested_post, current_user=current_user, form=form)
 
 
@@ -192,7 +190,7 @@ def add_new_post():
     return render_template("make-post.html", form=form, current_user=current_user)
 
 
-@app.route("/edit-post/<int:post_id>")
+@app.route("/edit-post/<int:post_id>", methods=['GET', 'POST'])
 @admin_only
 def edit_post(post_id):
     post = BlogPost.query.get(post_id)
